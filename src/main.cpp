@@ -442,6 +442,27 @@ static std::string apply_vars(const std::string& s, const std::map<std::string, 
     return out;
 }
 
+// Resolve {{key}} references within vars itself, iterating until stable.
+// This allows vars to reference other vars regardless of definition order.
+// Circular references are left unexpanded (the {{key}} pattern stays as-is).
+static std::map<std::string, Value> resolve_vars(std::map<std::string, Value> vars) {
+    for (int pass = 0; pass < 100; ++pass) {
+        bool changed = false;
+        std::map<std::string, Value> next;
+        for (const auto& [k, v] : vars) {
+            // substitute only string values (non-string vars cannot contain {{...}})
+            if (!v.is_string()) { next[k] = v; continue; }
+            std::string before = v.as_string();
+            std::string after  = apply_vars(before, vars);
+            if (before != after) changed = true;
+            next[k] = Value(std::move(after));
+        }
+        vars = std::move(next);
+        if (!changed) break;
+    }
+    return vars;
+}
+
 static Value substitute(const Value& v, const std::map<std::string, Value>& vars) {
     switch (v.type) {
         case Value::Type::String: return Value(apply_vars(v.as_string(), vars));
@@ -1088,6 +1109,9 @@ static int process(const std::string& content, const std::string& filter,
             if (vv && vv->is_object()) {
                 std::map<std::string, Value> vars;
                 for (const auto& [k,v] : vv->as_object()) vars[k] = v;
+                // Step 1: resolve inter-variable references within vars
+                vars = resolve_vars(std::move(vars));
+                // Step 2: expand vars throughout the rest of the document
                 data = substitute(data, vars);
             }
         }
