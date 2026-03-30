@@ -23,18 +23,46 @@ add_compile_options(
     -Wall
     -Wextra
     -Wpedantic
-    $<$<CONFIG:Release>:-O2>
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:Release>:-march=native>
     $<$<CONFIG:Debug>:-g>
 )
 
+include(CheckIPOSupported)
+check_ipo_supported(RESULT _ipo_ok OUTPUT _ipo_msg)
+if(_ipo_ok)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+endif()
+
 # ============================================================================
-# Target
+# Targets
 # ============================================================================
 
+# Shared library (FFI-ready, C API exported)
+add_library(varjson5lib SHARED src/varjson5.cpp)
+target_include_directories(varjson5lib PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+set_target_properties(varjson5lib PROPERTIES
+    OUTPUT_NAME varjson5
+    VERSION     ${PROJECT_VERSION}
+    SOVERSION   1
+)
+
+# Executable
 add_executable(varjson5 src/main.cpp)
+target_include_directories(varjson5 PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(varjson5 PRIVATE varjson5lib)
 
+install(TARGETS varjson5lib
+    LIBRARY DESTINATION lib
+)
 install(TARGETS varjson5
     RUNTIME DESTINATION bin
+)
+install(FILES include/varjson5.h
+    DESTINATION include
 )
 
 # ============================================================================

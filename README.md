@@ -7,7 +7,8 @@ jqライクなJSON5プロセッサ。`{{vars}}`形式のMustache風変数展開�
 - **JSON5対応** — コメント(`//`, `/* */`)、末尾カンマ、unquoted key、単引用符文字列、16進数リテラルなど
 - **{{vars}}展開** — `"vars"`キーで定義した変数をドキュメント全体の`{{key}}`パターンに自動展開。vars内での変数間参照・連鎖展開にも対応
 - **jqライクなフィルタ** — `.key`, `.[]`, パイプ `|`, `map()`, `select()` など
-- **高速** — C++17実装、依存ライブラリなし、起動 約2ms
+- **高速** — C++17実装、`-O3 -march=native` + LTO、依存ライブラリなし
+- **FFI対応** — 共有ライブラリ(`libvarjson5.so`)としてPython・PHPなど他言語から利用可能
 
 ## インストール
 
@@ -21,6 +22,14 @@ sudo dpkg -i varjson5_1.0.0_amd64.deb
 sudo rpm -i varjson5-1.0.0.rpm
 ```
 
+インストール先:
+
+| ファイル | パス |
+|---------|------|
+| 実行ファイル | `/usr/bin/varjson5` |
+| 共有ライブラリ | `/usr/lib/libvarjson5.so` |
+| ヘッダ | `/usr/include/varjson5.h` |
+
 ### ソースからビルド
 
 **必要なもの:**
@@ -33,8 +42,22 @@ cd varjson5
 
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-sudo cmake --install build
+sudo cmake --install build   # デフォルトは /usr/local 以下
 ```
+
+`--prefix` でインストール先を変更できます:
+
+```bash
+sudo cmake --install build --prefix /usr
+```
+
+インストール先（デフォルト `/usr/local`）:
+
+| ファイル | パス |
+|---------|------|
+| 実行ファイル | `/usr/local/bin/varjson5` |
+| 共有ライブラリ | `/usr/local/lib/libvarjson5.so` |
+| ヘッダ | `/usr/local/include/varjson5.h` |
 
 ### パッケージ作成
 
@@ -261,6 +284,87 @@ varjson5 '.name' a.json5 b.json5
   },
 }
 ```
+
+## ライブラリとして使う（FFI）
+
+`libvarjson5.so` を他言語からFFI経由で利用できます。
+
+### C API
+
+```c
+#include <varjson5.h>
+
+/* flags */
+#define VARJSON5_RAW     1   /* 文字列をクォートなしで出力 */
+#define VARJSON5_COMPACT 2   /* コンパクト出力 */
+
+/* JSON5を処理してJSON文字列を返す。失敗時はNULL。
+   戻り値は varjson5_free() で解放すること。スレッドセーフ。 */
+char*       varjson5_process    (const char* input, const char* filter, int flags);
+void        varjson5_free       (char* ptr);
+const char* varjson5_last_error (void);   /* 直前のエラーメッセージ（スレッドローカル） */
+```
+
+複数の結果はjqと同様に改行区切りで返されます。
+
+### Python
+
+Python 3.x + 標準ライブラリ `ctypes` のみで動作します。
+
+```python
+from examples.varjson5 import Varjson5
+
+vj = Varjson5()                          # libvarjson5.so を自動検出
+vj = Varjson5("/path/to/libvarjson5.so") # パスを直接指定
+
+# 基本
+result = vj.process('{"vars":{"k":"hi"},"body":{"t":"{{k}}"}}')
+
+# フィルタ・オプション指定
+result = vj.process(json5_str, filter=".body", raw=False, compact=False)
+
+# 結果をPythonオブジェクトとして取得
+obj = vj.process_to_dict(json5_str, ".body")
+```
+
+**ライブラリ検索順序:**
+1. `LD_LIBRARY_PATH` 内の各パス
+2. スクリプト周辺 (`./`, `../build/`)
+3. `ctypes.util.find_library("varjson5")` — `ldconfig` キャッシュ・システムパスを検索
+
+サンプル: [`examples/varjson5.py`](examples/varjson5.py)
+
+### PHP
+
+PHP 7.4以上 + `ext-ffi` が必要です。`php.ini` で以下を有効化してください:
+
+```ini
+extension=ffi
+ffi.enable=true
+```
+
+```php
+$vj = new Varjson5();                          // libvarjson5.so を自動検出
+$vj = new Varjson5('/path/to/libvarjson5.so'); // パスを直接指定
+
+// 基本
+$result = $vj->process('{"vars":{"k":"hi"},"body":{"t":"{{k}}"}}');
+
+// フィルタ・オプション指定
+$result = $vj->process($json5, '.body', raw: false, compact: false);
+
+// 結果をPHP配列として取得
+$arr = $vj->processToArray($json5, '.body');
+```
+
+**ライブラリ検索順序:**
+1. `LD_LIBRARY_PATH` 内の各パス
+2. スクリプト周辺 (`./`, `../build/`)
+3. `/usr/local/lib/libvarjson5.so` — `cmake --install` デフォルト
+4. `/usr/lib/libvarjson5.so` — CPack パッケージインストール
+5. `/usr/lib/x86_64-linux-gnu/libvarjson5.so` 等 — Debian/Ubuntu マルチアーチ
+
+サンプル: [`examples/Varjson5.php`](examples/Varjson5.php)
 
 ## ライセンス
 
