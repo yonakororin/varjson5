@@ -1102,29 +1102,40 @@ static void show_help() {
         "  echo '{a:1}' | varjson5 '.a'\n";
 }
 
+// Parse JSON5 content and apply {{vars}} substitution.
+// Throws on parse errors.
+static Value load_value(const std::string& content) {
+    Value data = Parser(content).parse();
+    if (data.is_object()) {
+        const Value* vv = data.get("vars");
+        if (vv && vv->is_object()) {
+            std::map<std::string, Value> vars;
+            for (const auto& [k,v] : vv->as_object()) vars[k] = v;
+            vars = resolve_vars(std::move(vars));
+            data = substitute(data, vars);
+        }
+    }
+    return data;
+}
+
+// Apply a filter to an already-parsed Value and serialize the results.
+// Throws on filter errors.
+static std::string query_value(const Value& data, const std::string& filter,
+                               bool raw, bool compact) {
+    Results results = eval(data, filter);
+    std::ostringstream oss;
+    for (const auto& r : results) {
+        if (raw && r.is_string()) oss << r.as_string() << '\n';
+        else                      oss << to_json(r, compact) << '\n';
+    }
+    return oss.str();
+}
+
 static int process(const std::string& content, const std::string& filter,
                    bool raw, bool compact) {
     try {
-        Value data = Parser(content).parse();
-
-        // Variable substitution
-        if (data.is_object()) {
-            const Value* vv = data.get("vars");
-            if (vv && vv->is_object()) {
-                std::map<std::string, Value> vars;
-                for (const auto& [k,v] : vv->as_object()) vars[k] = v;
-                // Step 1: resolve inter-variable references within vars
-                vars = resolve_vars(std::move(vars));
-                // Step 2: expand vars throughout the rest of the document
-                data = substitute(data, vars);
-            }
-        }
-
-        Results results = eval(data, filter);
-        for (const auto& r : results) {
-            if (raw && r.is_string()) std::cout << r.as_string() << '\n';
-            else std::cout << to_json(r, compact) << '\n';
-        }
+        Value data = load_value(content);
+        std::cout << query_value(data, filter, raw, compact);
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "varjson5: " << e.what() << '\n';
@@ -1172,32 +1183,32 @@ int varjson5_main_impl(int argc, char* argv[]) {
 
 static thread_local std::string g_last_error;
 
+// varjson5_doc holds a parsed and variable-substituted JSON5 document.
+// Defined here (in .cpp) so callers only see an opaque pointer via the header.
+struct varjson5_doc {
+    Value data;
+};
+
+namespace {
+// Copy a std::string into a malloc'd buffer suitable for returning to C callers.
+char* dup_to_c(const std::string& s) {
+    char* buf = static_cast<char*>(std::malloc(s.size() + 1));
+    if (!buf) return nullptr;
+    std::memcpy(buf, s.data(), s.size() + 1);
+    return buf;
+}
+} // namespace
+
 extern "C" {
 
 char* varjson5_process(const char* input, const char* filter, int flags) {
     bool raw     = (flags & VARJSON5_RAW)     != 0;
     bool compact = (flags & VARJSON5_COMPACT) != 0;
     try {
-        Value data = Parser(std::string(input)).parse();
-        if (data.is_object()) {
-            const Value* vv = data.get("vars");
-            if (vv && vv->is_object()) {
-                std::map<std::string, Value> vars;
-                for (const auto& [k, v] : vv->as_object()) vars[k] = v;
-                vars = resolve_vars(std::move(vars));
-                data = substitute(data, vars);
-            }
-        }
-        Results results = eval(data, filter ? std::string(filter) : std::string("."));
-        std::ostringstream oss;
-        for (const auto& r : results) {
-            if (raw && r.is_string()) oss << r.as_string() << '\n';
-            else                      oss << to_json(r, compact) << '\n';
-        }
-        std::string s = oss.str();
-        char* buf = static_cast<char*>(std::malloc(s.size() + 1));
+        Value data = load_value(std::string(input));
+        std::string s = query_value(data, filter ? std::string(filter) : std::string("."), raw, compact);
+        char* buf = dup_to_c(s);
         if (!buf) { g_last_error = "out of memory"; return nullptr; }
-        std::memcpy(buf, s.data(), s.size() + 1);
         return buf;
     } catch (const std::exception& e) {
         g_last_error = e.what();
@@ -1211,6 +1222,35 @@ void varjson5_free(char* ptr) {
 
 const char* varjson5_last_error(void) {
     return g_last_error.c_str();
+}
+
+varjson5_doc* varjson5_load(const char* input) {
+    try {
+        auto* doc = new varjson5_doc{ load_value(std::string(input)) };
+        return doc;
+    } catch (const std::exception& e) {
+        g_last_error = e.what();
+        return nullptr;
+    }
+}
+
+char* varjson5_query(varjson5_doc* doc, const char* filter, int flags) {
+    if (!doc) { g_last_error = "null document handle"; return nullptr; }
+    bool raw     = (flags & VARJSON5_RAW)     != 0;
+    bool compact = (flags & VARJSON5_COMPACT) != 0;
+    try {
+        std::string s = query_value(doc->data, filter ? std::string(filter) : std::string("."), raw, compact);
+        char* buf = dup_to_c(s);
+        if (!buf) { g_last_error = "out of memory"; return nullptr; }
+        return buf;
+    } catch (const std::exception& e) {
+        g_last_error = e.what();
+        return nullptr;
+    }
+}
+
+void varjson5_free_doc(varjson5_doc* doc) {
+    delete doc;
 }
 
 } // extern "C"

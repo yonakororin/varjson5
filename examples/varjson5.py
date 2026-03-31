@@ -68,6 +68,18 @@ def _load(path: str | None = None) -> ctypes.CDLL:
     lib.varjson5_last_error.restype  = ctypes.c_char_p
     lib.varjson5_last_error.argtypes = []
 
+    # varjson5_doc* varjson5_load(const char* input)
+    lib.varjson5_load.restype  = ctypes.c_void_p
+    lib.varjson5_load.argtypes = [ctypes.c_char_p]
+
+    # char* varjson5_query(varjson5_doc* doc, const char* filter, int flags)
+    lib.varjson5_query.restype  = ctypes.c_void_p
+    lib.varjson5_query.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+
+    # void varjson5_free_doc(varjson5_doc* doc)
+    lib.varjson5_free_doc.restype  = None
+    lib.varjson5_free_doc.argtypes = [ctypes.c_void_p]
+
     return lib
 
 
@@ -139,6 +151,94 @@ class Varjson5:
         first_line = text.splitlines()[0] if text else "null"
         return json.loads(first_line)
 
+    def load(self, input: str) -> "Varjson5Doc":
+        """
+        Parse *input* as JSON5 and apply {{vars}} substitution once.
+        Returns a :class:`Varjson5Doc` that can be queried multiple times
+        without re-parsing.
+
+        Use as a context manager to ensure the document is freed::
+
+            with vj.load(json5_str) as doc:
+                r1 = doc.query(".body")
+                r2 = doc.query(".config", compact=True)
+        """
+        ptr = self._lib.varjson5_load(input.encode())
+        if ptr is None:
+            msg = self._lib.varjson5_last_error()
+            raise Varjson5Error(msg.decode() if msg else "unknown error")
+        return Varjson5Doc(self._lib, ptr)
+
+
+# ---------------------------------------------------------------------------
+# Varjson5Doc — handle returned by Varjson5.load()
+# ---------------------------------------------------------------------------
+class Varjson5Doc:
+    """
+    An opaque handle to a parsed and variable-substituted JSON5 document.
+    Created by :meth:`Varjson5.load`; supports context-manager protocol.
+    """
+
+    def __init__(self, lib: ctypes.CDLL, ptr: int) -> None:
+        self._lib = lib
+        self._ptr = ptr  # c_void_p (raw integer address)
+
+    def query(
+        self,
+        filter: str = ".",
+        *,
+        raw: bool = False,
+        compact: bool = False,
+    ) -> str:
+        """
+        Apply *filter* to the loaded document without re-parsing.
+
+        Parameters
+        ----------
+        filter  : jq-style filter expression (default: ".")
+        raw     : if True, strings are output without JSON encoding
+        compact : if True, output is single-line (no indentation)
+
+        Returns
+        -------
+        Processed output as a string (multiple results separated by newlines).
+        """
+        if self._ptr is None:
+            raise Varjson5Error("document has already been freed")
+        flags = 0
+        if raw:
+            flags |= VARJSON5_RAW
+        if compact:
+            flags |= VARJSON5_COMPACT
+        ptr = self._lib.varjson5_query(self._ptr, filter.encode(), flags)
+        if ptr is None:
+            msg = self._lib.varjson5_last_error()
+            raise Varjson5Error(msg.decode() if msg else "unknown error")
+        text = ctypes.cast(ptr, ctypes.c_char_p).value.decode()
+        self._lib.varjson5_free(ptr)
+        return text.rstrip("\n")
+
+    def query_to_dict(self, filter: str = ".") -> object:
+        """Convenience: query and parse the first result via json.loads()."""
+        text = self.query(filter, compact=True)
+        first_line = text.splitlines()[0] if text else "null"
+        return json.loads(first_line)
+
+    def close(self) -> None:
+        """Release the document handle. Idempotent."""
+        if self._ptr is not None:
+            self._lib.varjson5_free_doc(self._ptr)
+            self._ptr = None
+
+    def __enter__(self) -> "Varjson5Doc":
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        self.close()
+
 
 # ---------------------------------------------------------------------------
 # Demo (python examples/varjson5.py)
@@ -194,3 +294,10 @@ if __name__ == "__main__":
         vj.process("{ invalid json !!!")
     except Varjson5Error as e:
         print(f"Caught Varjson5Error: {e}")
+
+    # --- 8. load() + query(): parse once, query many times ---
+    print("\n=== 8. load/query (parse once) ===")
+    with vj.load(src1) as doc:
+        print(doc.query(".app.name", raw=True))
+        print(doc.query(".app.tag",  raw=True))
+        print(doc.query(".app",      compact=True))

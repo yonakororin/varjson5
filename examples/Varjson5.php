@@ -18,6 +18,79 @@
 
 class Varjson5Exception extends RuntimeException {}
 
+/**
+ * Handle to a parsed and variable-substituted JSON5 document.
+ * Created by Varjson5::load(); query it multiple times without re-parsing.
+ */
+class Varjson5Doc
+{
+    private \FFI   $ffi;
+    private mixed  $ptr;   // FFI pointer to varjson5_doc
+
+    /** @internal Called by Varjson5::load() only. */
+    public function __construct(\FFI $ffi, mixed $ptr)
+    {
+        $this->ffi = $ffi;
+        $this->ptr = $ptr;
+    }
+
+    /**
+     * Apply a jq-style filter to the loaded document without re-parsing.
+     *
+     * @param  string $filter  jq-style filter (default ".")
+     * @param  bool   $raw     Output strings without JSON encoding
+     * @param  bool   $compact Single-line output (no indentation)
+     * @return string          Processed output (multiple results separated by "\n")
+     * @throws Varjson5Exception on filter errors
+     */
+    public function query(
+        string $filter = '.',
+        bool $raw = false,
+        bool $compact = false
+    ): string {
+        if ($this->ptr === null) {
+            throw new Varjson5Exception('Document has already been freed');
+        }
+        $flags = ($raw ? Varjson5::RAW : 0) | ($compact ? Varjson5::COMPACT : 0);
+        $ptr = $this->ffi->varjson5_query($this->ptr, $filter, $flags);
+        if ($ptr === null) {
+            $err = $this->ffi->varjson5_last_error();
+            throw new Varjson5Exception(\FFI::string($err));
+        }
+        $result = \FFI::string($ptr);
+        $this->ffi->varjson5_free($ptr);
+        return rtrim($result, "\n");
+    }
+
+    /**
+     * Query and decode the first result as a PHP value.
+     *
+     * @return mixed Decoded PHP value
+     * @throws Varjson5Exception on filter errors
+     * @throws \JsonException    on JSON decode errors
+     */
+    public function queryToArray(string $filter = '.'): mixed
+    {
+        $text = $this->query($filter, compact: true);
+        $firstLine = explode("\n", $text)[0];
+        return json_decode($firstLine, associative: true, flags: \JSON_THROW_ON_ERROR);
+    }
+
+    /** Release the document handle. Idempotent. */
+    public function free(): void
+    {
+        if ($this->ptr !== null) {
+            $this->ffi->varjson5_free_doc($this->ptr);
+            $this->ptr = null;
+        }
+    }
+
+    public function __destruct()
+    {
+        $this->free();
+    }
+}
+
 class Varjson5
 {
     // Flags (mirror varjson5.h)
@@ -39,6 +112,11 @@ class Varjson5
             char*       varjson5_process    (const char* input, const char* filter, int flags);
             void        varjson5_free       (char* ptr);
             const char* varjson5_last_error (void);
+
+            typedef struct varjson5_doc varjson5_doc;
+            varjson5_doc* varjson5_load     (const char* input);
+            char*         varjson5_query    (varjson5_doc* doc, const char* filter, int flags);
+            void          varjson5_free_doc (varjson5_doc* doc);
             ',
             $lib
         );
@@ -94,6 +172,24 @@ class Varjson5
         $text = $this->process($input, $filter, compact: true);
         $firstLine = explode("\n", $text)[0];
         return json_decode($firstLine, associative: true, flags: \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Parse JSON5 input and apply {{vars}} substitution once.
+     * Returns a Varjson5Doc that can be queried multiple times without re-parsing.
+     *
+     * @param  string $input  JSON5 string
+     * @return Varjson5Doc
+     * @throws Varjson5Exception on parse errors
+     */
+    public function load(string $input): \Varjson5Doc
+    {
+        $ptr = $this->ffi->varjson5_load($input);
+        if ($ptr === null) {
+            $err = $this->ffi->varjson5_last_error();
+            throw new Varjson5Exception(\FFI::string($err));
+        }
+        return new \Varjson5Doc($this->ffi, $ptr);
     }
 
     // ------------------------------------------------------------------
@@ -204,4 +300,12 @@ JSON5;
     } catch (Varjson5Exception $e) {
         echo 'Caught Varjson5Exception: ' . $e->getMessage() . "\n";
     }
+
+    // --- 8. load() + query(): parse once, query many times ---
+    echo "\n=== 8. load/query (parse once) ===\n";
+    $doc = $vj->load($src1);
+    echo $doc->query('.app.name', raw: true) . "\n";
+    echo $doc->query('.app.tag',  raw: true) . "\n";
+    echo $doc->query('.app',      compact: true) . "\n";
+    $doc->free();
 }
