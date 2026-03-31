@@ -82,8 +82,9 @@ set(CPACK_PACKAGE_HOMEPAGE_URL "${PROJECT_HOMEPAGE_URL}")
 
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 
-# Install into /usr prefix inside the package
+# Install into /usr by default; RPM overrides this to /usr/local via CPackProjectConfig.cmake
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_SOURCE_DIR}/CPackProjectConfig.cmake")
 
 set(CPACK_STRIP_FILES TRUE)
 
