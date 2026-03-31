@@ -54,6 +54,11 @@ set_target_properties(varjson5lib PROPERTIES
 add_executable(varjson5 src/main.cpp)
 target_include_directories(varjson5 PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(varjson5 PRIVATE varjson5lib)
+# Embed RPATH relative to the binary so libvarjson5.so is found regardless
+# of install prefix (/usr or /usr/local).
+set_target_properties(varjson5 PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../lib"
+)
 
 install(TARGETS varjson5lib
     LIBRARY DESTINATION lib
