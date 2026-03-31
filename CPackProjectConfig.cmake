@@ -4,4 +4,15 @@
 
 if(CPACK_GENERATOR STREQUAL "RPM")
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+
+    # Exclude standard directories already owned by the filesystem package
+    # to avoid "conflict with file from filesystem-*" errors.
+    set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION
+        /usr/local
+        /usr/local/bin
+        /usr/local/lib
+        /usr/local/lib64
+        /usr/local/include
+        /usr/local/share
+    )
 endif()
