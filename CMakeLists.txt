@@ -71,6 +71,40 @@ install(FILES include/varjson5.h
 )
 
 # ============================================================================
+# Python / PHP bindings installation
+# ============================================================================
+
+# Detect Python3 version to build the correct site-packages path
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+    set(_py_ver "${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}")
+else()
+    execute_process(
+        COMMAND python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        OUTPUT_VARIABLE _py_ver
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(NOT _py_ver)
+        set(_py_ver "3")
+    endif()
+endif()
+
+# Cache for use in CPackProjectConfig.cmake
+set(PYTHON_VERSION_DIR "python${_py_ver}"
+    CACHE STRING "Python versioned directory name (e.g. python3.11)" FORCE)
+set(PYTHON_SITE_PACKAGES "lib/${PYTHON_VERSION_DIR}/site-packages"
+    CACHE STRING "Python site-packages path relative to install prefix" FORCE)
+
+install(FILES python/VarJson5.py
+    DESTINATION "${PYTHON_SITE_PACKAGES}"
+)
+
+install(FILES php/VarJson5.php
+    DESTINATION "share/php"
+)
+
+# ============================================================================
 # CPack — common settings
 # ============================================================================
 

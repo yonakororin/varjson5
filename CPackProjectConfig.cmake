@@ -14,5 +14,8 @@ if(CPACK_GENERATOR STREQUAL "RPM")
         /usr/local/lib64
         /usr/local/include
         /usr/local/share
+        /usr/local/share/php
+        "/usr/local/lib/${PYTHON_VERSION_DIR}"
+        "/usr/local/lib/${PYTHON_VERSION_DIR}/site-packages"
     )
 endif()
