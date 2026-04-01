@@ -24,11 +24,13 @@ sudo rpm -i varjson5-1.0.0.rpm
 
 インストール先:
 
-| ファイル | パス |
-|---------|------|
-| 実行ファイル | `/usr/bin/varjson5` |
-| 共有ライブラリ | `/usr/lib/libvarjson5.so` |
-| ヘッダ | `/usr/include/varjson5.h` |
+| ファイル | DEB (`/usr`) | RPM (`/usr/local`) |
+|---------|-------------|-------------------|
+| 実行ファイル | `/usr/bin/varjson5` | `/usr/local/bin/varjson5` |
+| 共有ライブラリ | `/usr/lib/libvarjson5.so` | `/usr/local/lib/libvarjson5.so` |
+| ヘッダ | `/usr/include/varjson5.h` | `/usr/local/include/varjson5.h` |
+| Python バインディング | `/usr/lib/python3.x/site-packages/VarJson5.py` | `/usr/local/lib/python3.x/site-packages/VarJson5.py` |
+| PHP バインディング | `/usr/share/php/VarJson5.php` | `/usr/local/share/php/VarJson5.php` |
 
 ### ソースからビルド
 
@@ -58,6 +60,8 @@ sudo cmake --install build --prefix /usr
 | 実行ファイル | `/usr/local/bin/varjson5` |
 | 共有ライブラリ | `/usr/local/lib/libvarjson5.so` |
 | ヘッダ | `/usr/local/include/varjson5.h` |
+| Python バインディング | `/usr/local/lib/python3.x/site-packages/VarJson5.py` |
+| PHP バインディング | `/usr/local/share/php/VarJson5.php` |
 
 ### パッケージ作成
 
@@ -298,11 +302,18 @@ varjson5 '.name' a.json5 b.json5
 #define VARJSON5_RAW     1   /* 文字列をクォートなしで出力 */
 #define VARJSON5_COMPACT 2   /* コンパクト出力 */
 
-/* JSON5を処理してJSON文字列を返す。失敗時はNULL。
+/* 1回処理 API — パース・展開・フィルタを一括実行。失敗時はNULL。
    戻り値は varjson5_free() で解放すること。スレッドセーフ。 */
 char*       varjson5_process    (const char* input, const char* filter, int flags);
 void        varjson5_free       (char* ptr);
 const char* varjson5_last_error (void);   /* 直前のエラーメッセージ（スレッドローカル） */
+
+/* Document API — 同一ドキュメントに複数クエリを実行する場合に効率的。
+   varjson5_load() で一度だけパース・展開し、varjson5_query() を繰り返し呼び出す。 */
+typedef struct varjson5_doc varjson5_doc;
+varjson5_doc* varjson5_load     (const char* input);
+char*         varjson5_query    (varjson5_doc* doc, const char* filter, int flags);
+void          varjson5_free_doc (varjson5_doc* doc);
 ```
 
 複数の結果はjqと同様に改行区切りで返されます。
@@ -312,10 +323,10 @@ const char* varjson5_last_error (void);   /* 直前のエラーメッセージ�
 Python 3.x + 標準ライブラリ `ctypes` のみで動作します。
 
 ```python
-from examples.varjson5 import Varjson5
+from VarJson5 import VarJson5
 
-vj = Varjson5()                          # libvarjson5.so を自動検出
-vj = Varjson5("/path/to/libvarjson5.so") # パスを直接指定
+vj = VarJson5()                          # libvarjson5.so を自動検出
+vj = VarJson5("/path/to/libvarjson5.so") # パスを直接指定
 
 # 基本
 result = vj.process('{"vars":{"k":"hi"},"body":{"t":"{{k}}"}}')
@@ -325,6 +336,12 @@ result = vj.process(json5_str, filter=".body", raw=False, compact=False)
 
 # 結果をPythonオブジェクトとして取得
 obj = vj.process_to_dict(json5_str, ".body")
+
+# 同一ドキュメントに複数クエリ（Document API）
+with vj.load(json5_str) as doc:
+    r1 = doc.query(".body")
+    r2 = doc.query(".config", compact=True)
+    obj = doc.query_to_dict(".body")
 ```
 
 **ライブラリ検索順序:**
@@ -332,7 +349,7 @@ obj = vj.process_to_dict(json5_str, ".body")
 2. スクリプト周辺 (`./`, `../build/`)
 3. `ctypes.util.find_library("varjson5")` — `ldconfig` キャッシュ・システムパスを検索
 
-サンプル: [`examples/varjson5.py`](examples/varjson5.py)
+ソース: [`python/VarJson5.py`](python/VarJson5.py)
 
 ### PHP
 
@@ -344,8 +361,10 @@ ffi.enable=true
 ```
 
 ```php
-$vj = new Varjson5();                          // libvarjson5.so を自動検出
-$vj = new Varjson5('/path/to/libvarjson5.so'); // パスを直接指定
+require_once 'VarJson5.php';
+
+$vj = new VarJson5();                          // libvarjson5.so を自動検出
+$vj = new VarJson5('/path/to/libvarjson5.so'); // パスを直接指定
 
 // 基本
 $result = $vj->process('{"vars":{"k":"hi"},"body":{"t":"{{k}}"}}');
@@ -355,6 +374,13 @@ $result = $vj->process($json5, '.body', raw: false, compact: false);
 
 // 結果をPHP配列として取得
 $arr = $vj->processToArray($json5, '.body');
+
+// 同一ドキュメントに複数クエリ（Document API）
+$doc = $vj->load($json5);
+$r1  = $doc->query('.body');
+$r2  = $doc->query('.config', compact: true);
+$arr = $doc->queryToArray('.body');
+$doc->free();
 ```
 
 **ライブラリ検索順序:**
@@ -364,7 +390,7 @@ $arr = $vj->processToArray($json5, '.body');
 4. `/usr/lib/libvarjson5.so` — CPack パッケージインストール
 5. `/usr/lib/x86_64-linux-gnu/libvarjson5.so` 等 — Debian/Ubuntu マルチアーチ
 
-サンプル: [`examples/Varjson5.php`](examples/Varjson5.php)
+ソース: [`php/VarJson5.php`](php/VarJson5.php)
 
 ## ライセンス
 
