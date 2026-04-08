@@ -345,8 +345,8 @@ with vj.load(json5_str) as doc:
 ```
 
 **ライブラリ検索順序:**
-1. `LD_LIBRARY_PATH` 内の各パス
-2. スクリプト周辺 (`./`, `../build/`)
+1. スクリプト周辺 (`./`, `../build/`, `../`)
+2. `LD_LIBRARY_PATH` 内の各パス
 3. `ctypes.util.find_library("varjson5")` — `ldconfig` キャッシュ・システムパスを検索
 
 ソース: [`python/VarJson5.py`](python/VarJson5.py)
@@ -385,10 +385,10 @@ $doc->free();
 
 **ライブラリ検索順序:**
 1. `LD_LIBRARY_PATH` 内の各パス
-2. スクリプト周辺 (`./`, `../build/`)
+2. スクリプト周辺 (`./`, `../build/`, `../`)
 3. `/usr/local/lib/libvarjson5.so` — `cmake --install` デフォルト
 4. `/usr/lib/libvarjson5.so` — CPack パッケージインストール
-5. `/usr/lib/x86_64-linux-gnu/libvarjson5.so` 等 — Debian/Ubuntu マルチアーチ
+5. `/usr/lib/x86_64-linux-gnu/libvarjson5.so`, `/usr/lib/aarch64-linux-gnu/libvarjson5.so` — Debian/Ubuntu マルチアーチ
 
 ソース: [`php/VarJson5.php`](php/VarJson5.php)
 
