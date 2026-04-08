@@ -112,7 +112,7 @@ class VarJson5Doc:
         self,
         filter: str = ".",
         *,
-        raw: bool = False,
+        raw: bool = True,
         compact: bool = False,
     ) -> str:
         """

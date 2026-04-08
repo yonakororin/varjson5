@@ -344,6 +344,27 @@ with vj.load(json5_str) as doc:
     obj = doc.query_to_dict(".body")
 ```
 
+**`raw` / `compact` オプション:**
+
+| オプション | 型 | デフォルト | 説明 |
+|-----------|-----|-----------|------|
+| オプション | 型 | `process()` デフォルト | `query()` デフォルト | 説明 |
+|-----------|-----|----------------------|---------------------|------|
+| `raw` | `bool` | `False` | `True` | `True` にすると、文字列値を JSON のダブルクォートで囲まずそのまま出力する。CLI の `-r` / `--raw-output` に相当 |
+| `compact` | `bool` | `False` | `False` | `True` にすると、インデントや改行を省いた 1 行のコンパクト形式で出力する。CLI の `-c` / `--compact-output` に相当 |
+
+```python
+vj.process(src, ".body.name", raw=True)    # → hello  （クォートなし）
+vj.process(src, ".body.name", raw=False)   # → "hello"（クォートあり、デフォルト）
+
+# query() は raw=True がデフォルト
+doc.query(".body.name")             # → hello  （クォートなし）
+doc.query(".body.name", raw=False)  # → "hello"（クォートあり）
+
+vj.process(src, ".body", compact=True)     # → {"name":"hello","age":30}
+vj.process(src, ".body", compact=False)    # → 整形された複数行 JSON
+```
+
 **ライブラリ検索順序:**
 1. スクリプト周辺 (`./`, `../build/`, `../`)
 2. `LD_LIBRARY_PATH` 内の各パス
@@ -381,6 +402,27 @@ $r1  = $doc->query('.body');
 $r2  = $doc->query('.config', compact: true);
 $arr = $doc->queryToArray('.body');
 $doc->free();
+```
+
+**`raw` / `compact` オプション:**
+
+| オプション | 型 | デフォルト | 説明 |
+|-----------|-----|-----------|------|
+| オプション | 型 | `process()` デフォルト | `query()` デフォルト | 説明 |
+|-----------|-----|----------------------|---------------------|------|
+| `raw` | `bool` | `false` | `true` | `true` にすると、文字列値を JSON のダブルクォートで囲まずそのまま出力する。CLI の `-r` / `--raw-output` に相当 |
+| `compact` | `bool` | `false` | `false` | `true` にすると、インデントや改行を省いた 1 行のコンパクト形式で出力する。CLI の `-c` / `--compact-output` に相当 |
+
+```php
+$vj->process($src, '.body.name', raw: true);    // → hello  （クォートなし）
+$vj->process($src, '.body.name', raw: false);   // → "hello"（クォートあり、デフォルト）
+
+// query() は raw: true がデフォルト
+$doc->query('.body.name');              // → hello  （クォートなし）
+$doc->query('.body.name', raw: false); // → "hello"（クォートあり）
+
+$vj->process($src, '.body', compact: true);     // → {"name":"hello","age":30}
+$vj->process($src, '.body', compact: false);    // → 整形された複数行 JSON
 ```
 
 **ライブラリ検索順序:**

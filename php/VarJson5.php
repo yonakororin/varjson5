@@ -55,7 +55,7 @@ class VarJson5Doc
      */
     public function query(
         string $filter = '.',
-        bool $raw = false,
+        bool $raw = true,
         bool $compact = false
     ): string {
         if ($this->ptr === null) {
